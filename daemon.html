@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Linux 核心守護神 Daemon</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;700&display=swap');
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #0f172a;
+            color: #e2e8f0;
+            scroll-behavior: smooth;
+        }
+        .glass-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .code-block {
+            background-color: #000000;
+            border-left: 4px solid #e11d48;
+            padding: 1rem;
+            font-family: 'Courier New', Courier, monospace;
+            overflow-x: auto;
+        }
+        .highlight {
+            color: #fb923c;
+            font-weight: bold;
+        }
+        .ubuntu-gradient {
+            background: linear-gradient(90deg, #E95420 0%, #772953 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        th {
+            color: #fb923c;
+        }
+        .alpine-card {
+            background: rgba(13, 148, 136, 0.1);
+            border: 1px solid rgba(13, 148, 136, 0.3);
+        }
+        /* 動畫效果 */
+        @keyframes pulse-orange {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .animate-pulse-orange {
+            animation: pulse-orange 3s infinite;
+        }
+        @keyframes pulse-teal {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .animate-pulse-teal {
+            animation: pulse-teal 3s infinite;
+        }
+        @keyframes dash {
+            to { stroke-dashoffset: 0; }
+        }
+        .flow-line {
+            stroke-dasharray: 8;
+            stroke-dashoffset: 80;
+            animation: dash 3s linear infinite;
+        }
+    </style>
+</head>
+<body class="leading-relaxed">
+
+    <!-- 導覽列 -->
+    <nav class="fixed top-0 w-full z-50 bg-slate-900/80 border-b border-slate-700 py-4 px-6 backdrop-blur-md">
+        <div class="max-w-6xl mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold tracking-tighter text-orange-500">Daemon Guide</h1>
+            <div class="hidden md:flex space-x-6 text-sm font-medium">
+                <a href="#what-is" class="hover:text-orange-400 transition">什麼是 Daemon</a>
+                <a href="#features" class="hover:text-orange-400 transition">核心特點</a>
+                <a href="#functions" class="hover:text-orange-400 transition">主要功能</a>
+                <a href="#systemd" class="hover:text-orange-400 transition">systemd 架構</a>
+                <a href="#tutorial" class="hover:text-orange-400 transition">實作與修復</a>
+                <a href="#how-its-made" class="hover:text-orange-400 transition">製造原理</a>
+                <a href="#alpine" class="hover:text-orange-400 transition">Alpine 的 Daemon</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 英雄區塊 -->
+    <header class="pt-32 pb-20 px-6 text-center">
+        <div class="max-w-4xl mx-auto">
+            <h2 class="text-4xl md:text-6xl font-black mb-6 ubuntu-gradient">
+                Linux 核心守護神 Daemon
+            </h2>
+            <p class="text-lg text-slate-400 mb-8">
+                深入了解 Ubuntu 作業系統核心，探索那些默默支撐系統運行的後台力量。
+            </p>
+        </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto px-6 space-y-24 pb-24">
+
+        <!-- 1. 什麼是 Daemon？ -->
+        <section id="what-is" class="scroll-mt-24">
+            <div class="flex flex-col md:flex-row gap-12 items-center">
+                <div class="flex-1">
+                    <h3 class="text-3xl font-bold mb-4 border-l-4 border-orange-600 pl-4">1. 什麼是 Daemon？</h3>
+                    <p class="mb-4">
+                        <span class="highlight">Daemon</span>（發音同 "demon"）是指在後台運行、不與用戶直接進行交互的計算機程序。
+                    </p>
+                    <p class="text-slate-400 mb-4">
+                        在 Linux 檔案系統中，你常會看到以 <span class="highlight">"d"</span> 結尾的程序名稱，這通常就代表它是一個 Daemon。例如：
+                    </p>
+                    <ul class="space-y-2 text-slate-300 mb-6">
+                        <li><span class="text-orange-400 font-bold">sshd</span>：負責遠端連線的 Secure Shell Daemon。</li>
+                        <li><span class="text-orange-400 font-bold">httpd</span>：負責網頁服務的 HTTP Daemon。</li>
+                        <li><span class="text-orange-400 font-bold">systemd</span>：系統啟動後的第 1 個進程，負責管理所有其他 Daemon。</li>
+                    </ul>
+                    <div class="p-4 glass-card rounded-xl italic text-orange-200">
+                        "想像它是 Ubuntu 系統的自動化管家，你不需要叫它，它也會主動幫你處理雜事。"
+                    </div>
+                </div>
+                <div class="flex-1 w-full flex justify-center">
+                    <div class="w-64 h-64 bg-slate-800 rounded-full flex items-center justify-center border-4 border-orange-900/30 relative">
+                        <span class="text-8xl">👻</span>
+                        <div class="absolute -bottom-4 bg-orange-600 text-white font-bold px-4 py-1 rounded-full text-sm shadow-lg">Background Process</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. Daemon 的核心特點 -->
+        <section id="features" class="scroll-mt-24">
+            <h3 class="text-3xl font-bold mb-8 border-l-4 border-orange-600 pl-4">2. Daemon 的核心特點</h3>
+            <div class="grid md:grid-cols-3 gap-6">
+                <div class="glass-card p-6 rounded-2xl border-b-4 border-orange-500">
+                    <h4 class="text-xl font-bold mb-3 text-orange-400">後台運行</h4>
+                    <p class="text-slate-400 text-sm">它沒有圖形界面，也不會佔用你的終端機輸入窗口。你看不見它，但它確實在那工作。</p>
+                </div>
+                <div class="glass-card p-6 rounded-2xl border-b-4 border-orange-500">
+                    <h4 class="text-xl font-bold mb-3 text-orange-400">生命週期長</h4>
+                    <p class="text-slate-400 text-sm">通常在系統啟動（Boot）時自動開啟，直到系統關閉（Shutdown）時才停止，始終守護系統。</p>
+                </div>
+                <div class="glass-card p-6 rounded-2xl border-b-4 border-orange-500">
+                    <h4 class="text-xl font-bold mb-3 text-orange-400">非交互式</h4>
+                    <p class="text-slate-400 text-sm">不需要手動輸入指令來維持運作。它是在等待特定事件發生（例如有人透過網路連線進來）。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. Daemon 的主要功能 -->
+        <section id="functions" class="scroll-mt-24">
+            <h3 class="text-3xl font-bold mb-8 border-l-4 border-orange-600 pl-4">3. Daemon 的主要功能</h3>
+            <p class="mb-8 text-slate-400">Daemon 的功能非常廣泛，基本上支撐了 Ubuntu 系統的所有自動化任務：</p>
+            
+            <div class="space-y-6">
+                <div class="bg-slate-800/40 p-6 rounded-xl border border-slate-700 hover:border-orange-500 transition-colors">
+                    <h4 class="font-bold text-white text-lg mb-2 flex items-center gap-2">
+                        <span class="text-orange-500">A.</span> 提供網絡服務
+                    </h4>
+                    <p class="text-sm text-slate-400 leading-relaxed">
+                        這是最常見的用途。當你架設伺服器時，Daemon 會持續監聽特定的「端口」（Port）。<br>
+                        <span class="text-slate-200 italic font-medium">例如：apache2 或 nginx Daemon 會守著 80/443 端口，當有人輸入你的網址時，它立刻響應並傳送網頁資料。</span>
+                    </p>
+                </div>
+
+                <div class="bg-slate-800/40 p-6 rounded-xl border border-slate-700 hover:border-orange-500 transition-colors">
+                    <h4 class="font-bold text-white text-lg mb-2 flex items-center gap-2">
+                        <span class="text-orange-500">B.</span> 管理系統硬件與資源
+                    </h4>
+                    <p class="text-sm text-slate-400 leading-relaxed">
+                        確保硬件與軟體之間的溝通順暢。<br>
+                        <span class="text-slate-200 italic font-medium">例如：cupsd 負責排隊管理列印任務；udevd 負責偵測你什麼時候插上了 USB。</span>
+                    </p>
+                </div>
+
+                <div class="bg-slate-800/40 p-6 rounded-xl border border-slate-700 hover:border-orange-500 transition-colors">
+                    <h4 class="font-bold text-white text-lg mb-2 flex items-center gap-2">
+                        <span class="text-orange-500">C.</span> 執行定時任務
+                    </h4>
+                    <p class="text-sm text-slate-400 leading-relaxed">
+                        有些 Daemon 專門負責「看時間」。<br>
+                        <span class="text-slate-200 italic font-medium">例如：crond。如果你設定了每天凌晨 3 點備份資料，crond 就會在那一秒準時喚醒備份程式。</span>
+                    </p>
+                </div>
+
+                <div class="bg-slate-800/40 p-6 rounded-xl border border-slate-700 hover:border-orange-500 transition-colors">
+                    <h4 class="font-bold text-white text-lg mb-2 flex items-center gap-2">
+                        <span class="text-orange-500">D.</span> 日誌記錄與監控
+                    </h4>
+                    <p class="text-sm text-slate-400 leading-relaxed">
+                        記錄系統發生了什麼事，方便管理員除錯。<br>
+                        <span class="text-slate-200 italic font-medium">例如：rsyslogd 會收集各個軟體的錯誤訊息並存成 log 檔案。</span>
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. systemd 架構 -->
+        <section id="systemd" class="scroll-mt-24">
+            <h3 class="text-3xl font-bold mb-6 border-l-4 border-orange-600 pl-4">4. Ubuntu 的 systemd 架構</h3>
+            <p class="mb-10 text-slate-400">
+                Ubuntu 自 15.04 版本後，全面採用 <span class="highlight">systemd</span> 作為預設的初始化系統與服務管理器。它是所有 Daemon 的「總司令」。
+            </p>
+
+            <!-- 圖形化架構展示 (Ubuntu systemd) -->
+            <div class="glass-card p-4 md:p-8 rounded-3xl mb-10 overflow-hidden bg-slate-900 border border-slate-800">
+                <h4 class="text-center text-xl font-bold mb-8 text-orange-400 underline decoration-orange-900">systemd 層級結構圖 (Ubuntu)</h4>
+                <div class="w-full max-w-2xl mx-auto">
+                    <svg viewBox="0 0 600 380" class="w-full h-auto" xmlns="http://www.w3.org/2000/svg">
+                        <!-- Linux Kernel Box -->
+                        <rect x="200" y="10" width="200" height="60" rx="8" fill="#1e293b" stroke="#475569" stroke-width="2" />
+                        <text x="300" y="35" font-family="sans-serif" font-size="12" font-weight="bold" fill="#64748b" text-anchor="middle" dominant-baseline="middle">Bootloader 加載</text>
+                        <text x="300" y="55" font-family="sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">Linux Kernel</text>
+
+                        <!-- Line Kernel to systemd -->
+                        <path d="M 300 70 L 300 110" fill="none" stroke="#475569" stroke-width="2" />
+
+                        <!-- systemd (PID 1) Box -->
+                        <rect x="175" y="110" width="250" height="80" rx="12" fill="#E95420" stroke="#fb923c" stroke-width="2" class="animate-pulse-orange" />
+                        <text x="300" y="135" font-family="sans-serif" font-size="12" font-weight="bold" fill="#fed7aa" text-anchor="middle" dominant-baseline="middle">INITIALIZATION</text>
+                        <text x="300" y="160" font-family="sans-serif" font-size="20" font-weight="black" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">systemd (PID 1)</text>
+
+                        <!-- Horizontal Branch Line -->
+                        <path d="M 300 190 L 300 230 M 75 230 L 525 230" fill="none" stroke="#E95420" stroke-width="2" />
+
+                        <!-- Vertical Lines to Units -->
+                        <path d="M 75 230 L 75 260 M 225 230 L 225 260 M 375 230 L 375 260 M 525 230 L 525 260" fill="none" stroke="#E95420" stroke-width="2" />
+
+                        <!-- .service -->
+                        <rect x="25" y="260" width="100" height="80" rx="10" fill="#1e293b" stroke="#475569" stroke-width="1" />
+                        <text x="75" y="285" font-size="20" text-anchor="middle">⚙️</text>
+                        <text x="75" y="310" font-family="sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">.service</text>
+                        <text x="75" y="330" font-family="sans-serif" font-size="10" fill="#94a3b8" text-anchor="middle">Daemon 服務</text>
+
+                        <!-- .target -->
+                        <rect x="175" y="260" width="100" height="80" rx="10" fill="#1e293b" stroke="#475569" stroke-width="1" />
+                        <text x="225" y="285" font-size="20" text-anchor="middle">🎯</text>
+                        <text x="225" y="310" font-family="sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">.target</text>
+                        <text x="225" y="330" font-family="sans-serif" font-size="10" fill="#94a3b8" text-anchor="middle">啟動狀態組</text>
+
+                        <!-- .socket -->
+                        <rect x="325" y="260" width="100" height="80" rx="10" fill="#1e293b" stroke="#475569" stroke-width="1" />
+                        <text x="375" y="285" font-size="20" text-anchor="middle">🔌</text>
+                        <text x="375" y="310" font-family="sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">.socket</text>
+                        <text x="375" y="330" font-family="sans-serif" font-size="10" fill="#94a3b8" text-anchor="middle">網路通訊接口</text>
+
+                        <!-- .timer -->
+                        <rect x="475" y="260" width="100" height="80" rx="10" fill="#1e293b" stroke="#475569" stroke-width="1" />
+                        <text x="525" y="285" font-size="20" text-anchor="middle">⏰</text>
+                        <text x="525" y="310" font-family="sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">.timer</text>
+                        <text x="525" y="330" font-family="sans-serif" font-size="10" fill="#94a3b8" text-anchor="middle">定時排程</text>
+                    </svg>
+                </div>
+            </div>
+
+            <div class="space-y-6">
+                <div class="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+                    <h4 class="font-bold text-orange-400 mb-2">PID 1 的領袖地位</h4>
+                    <p class="text-sm">當你按下 Ubuntu 的電源鍵，核心加載後第一個跑起來的就是 systemd，它的進程編號永遠是 1。它是所有其他進程的父進程。</p>
+                </div>
+                
+                <div class="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+                    <h4 class="font-bold text-orange-400 mb-4">實用指令：在終端機查看架構</h4>
+                    <div class="space-y-4 text-sm text-slate-300">
+                        <div>
+                            <p class="mb-2 font-semibold text-white">A. 查看進程樹狀圖 (Process Tree)</p>
+                            <div class="code-block">pstree -p 1</div>
+                        </div>
+                        <div>
+                            <p class="mb-2 font-semibold text-white">B. 查看服務依賴樹 (Dependency Tree)</p>
+                            <div class="code-block">systemctl list-dependencies py-web</div>
+                        </div>
+                        <div>
+                            <p class="mb-2 font-semibold text-white">C. 視覺化啟動過程 (Visual Plot)</p>
+                            <div class="space-y-3">
+                                <div class="code-block">systemd-analyze plot > boot_analysis.svg</div>
+                                <div class="code-block text-xs">scp bigred@192.168.x.x:~/boot_analysis.svg C:\Users\Public\Downloads\</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 5. 操作 systemd 與修復 -->
+        <section id="tutorial" class="scroll-mt-24">
+            <h3 class="text-3xl font-bold mb-6 border-l-4 border-orange-600 pl-4">5. 動手實作與故障修復</h3>
+            
+            <div class="mb-16 space-y-12">
+                <h4 class="text-2xl font-bold text-orange-400">建立 Python 網頁守護進程</h4>
+                <div class="space-y-8">
+                    <div>
+                        <h5 class="text-lg font-bold mb-3 flex items-center gap-2">
+                            <span class="w-6 h-6 bg-orange-600 text-white rounded-full flex items-center justify-center text-xs">1</span>
+                            撰寫 Python 網頁程式
+                        </h5>
+                        <p class="text-sm text-slate-400 mb-3">建立檔案：<code class="text-white">sudo nano /usr/local/bin/myserver.py</code></p>
+                        <div class="code-block text-sm leading-relaxed">
+import http.server<br>
+import socketserver<br>
+from datetime import datetime<br><br>
+# 定義伺服器監聽的埠口 (Port)<br>
+PORT = 8080<br><br>
+class MyHandler(http.server.SimpleHTTPRequestHandler):<br>
+&nbsp;&nbsp;&nbsp;&nbsp;"""<br>
+&nbsp;&nbsp;&nbsp;&nbsp;自定義的請求處理類別，繼承自 SimpleHTTPRequestHandler。<br>
+&nbsp;&nbsp;&nbsp;&nbsp;"""<br><br>
+&nbsp;&nbsp;&nbsp;&nbsp;def do_GET(self):<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"""<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;當瀏覽器發送 GET 請求時自動觸發的 Function。<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;這是處理網頁顯示邏輯的核心。<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"""<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# 1. 向客戶端發送 HTTP 狀態碼 200，代表連線成功 (OK)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;self.send_response(200)<br><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# 2. 設定回應標頭 (Header)，告知瀏覽器內容是 HTML 格式且使用 UTF-8 編碼<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;self.send_header("Content-type", "text/html; charset=utf-8")<br><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# 3. 結束標頭部分，準備開始傳送網頁本體內容<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;self.end_headers()<br><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# 4. 取得當前的系統時間，並轉換成指定的字串格式<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")<br><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# 5. 組合要顯示在網頁上的 HTML 字串內容<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;content = f"&lt;h1&gt;Ubuntu Daemon 測試網頁&lt;/h1&gt;&lt;p&gt;現在時間：{now}&lt;/p&gt;&lt;p&gt;這是一個由 systemd 管理的 Python 守護進程。&lt;/p&gt;"<br><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# 6. 將字串編碼成 bytes 並寫入傳輸管道 (wfile)，回傳給瀏覽器<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;self.wfile.write(content.encode("utf-8"))<br><br>
+# 啟動 TCP 伺服器，監聽指定連接埠並持續運行<br>
+with socketserver.TCPServer(("", PORT), MyHandler) as httpd:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;"""<br>
+&nbsp;&nbsp;&nbsp;&nbsp;啟動伺服器並進入無限循環。<br>
+&nbsp;&nbsp;&nbsp;&nbsp;serve_forever() 是作為 Daemon 的關鍵，它讓程式持續運行，不會執行完就結束。<br>
+&nbsp;&nbsp;&nbsp;&nbsp;"""<br>
+&nbsp;&nbsp;&nbsp;&nbsp;httpd.serve_forever()
+                        </div>
+                    </div>
+
+                    <div>
+                        <h5 class="text-lg font-bold mb-3 flex items-center gap-2">
+                            <span class="w-6 h-6 bg-orange-600 text-white rounded-full flex items-center justify-center text-xs">2</span>
+                            編寫 Service 檔案
+                        </h5>
+                        <p class="text-sm text-slate-400 mb-3">建立設定檔：<code class="text-white">sudo nano /etc/systemd/system/py-web.service</code></p>
+                        <div class="code-block text-sm leading-relaxed">
+[Unit]<br>
+# 服務的簡短描述，會顯示在 systemctl status 的輸出的 Description 欄位<br>
+Description=Python 簡易網頁守護進程<br><br>
+# 啟動順序定義：確保在「網路功能」準備就緒後，才啟動這個網頁服務<br>
+After=network.target<br><br>
+[Service]<br>
+# 定義啟動類型：simple 代表 ExecStart 指令執行後，即視為服務已啟動<br>
+Type=simple<br><br>
+# 核心啟動指令：指定使用 python3 的絕對路徑來執行你的程式碼路徑<br>
+# 注意：在服務定義檔中，所有路徑都必須使用「絕對路徑」<br>
+ExecStart=/usr/bin/python3 /usr/local/bin/myserver.py<br><br>
+# 自動復原機制：如果程式因為 Bug 崩潰或被意外殺掉，systemd 會自動重啟它<br>
+Restart=always<br><br>
+[Install]<br>
+# 定義服務要掛載在哪個「目標」下<br>
+# multi-user.target 代表「多人多工模式」，通常就是指系統開機到登入畫面後的正常運作狀態<br>
+WantedBy=multi-user.target
+                        </div>
+                    </div>
+
+                    <div>
+                        <h5 class="text-lg font-bold mb-3 flex items-center gap-2">
+                            <span class="w-6 h-6 bg-orange-600 text-white rounded-full flex items-center justify-center text-xs">3</span>
+                            設定時區
+                        </h5>
+                        <div class="code-block text-sm">sudo timedatectl set-timezone Asia/Taipei</div>
+                    </div>
+
+                    <div>
+                        <h5 class="text-lg font-bold mb-3 flex items-center gap-2">
+                            <span class="w-6 h-6 bg-orange-600 text-white rounded-full flex items-center justify-center text-xs">4</span>
+                            啟動服務
+                        </h5>
+                        <div class="code-block text-sm">
+sudo systemctl daemon-reload<br>
+sudo systemctl start py-web<br>
+sudo systemctl enable py-web
+                        </div>
+                    </div>
+
+                    <div>
+                        <h5 class="text-lg font-bold mb-3 flex items-center gap-2">
+                            <span class="w-6 h-6 bg-orange-600 text-white rounded-full flex items-center justify-center text-xs">5</span>
+                            查看「所有已載入」的服務
+                        </h5>
+                        <div class="code-block text-sm">
+systemctl list-units --type=service
+                        </div>
+                    </div>
+
+                    <div>
+                        <h5 class="text-lg font-bold mb-3 flex items-center gap-2 text-orange-500">
+                            <span class="w-6 h-6 bg-orange-600 text-white rounded-full flex items-center justify-center text-xs">6</span>
+                            連線到網頁
+                        </h5>
+                        <div class="p-4 bg-slate-900 border border-orange-500/50 rounded-xl">
+                            <code class="text-orange-400 text-xl font-bold tracking-wide">http://[你的 IP 位址]:8080</code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 修復與移除部分 -->
+            <div class="mt-16 bg-slate-800/30 p-8 rounded-3xl border border-slate-700">
+                <h4 class="text-2xl font-bold mb-6 text-orange-500">如果 Daemon 掛掉會發生什麼事？</h4>
+                
+                <div class="overflow-x-auto mb-12">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>等級</th>
+                                <th>影響範圍</th>
+                                <th>掛掉的後果</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="font-bold">輕微</td>
+                                <td>單一應用功能失效</td>
+                                <td>無法列印文件，但電腦其他功能正常。</td>
+                            </tr>
+                            <tr>
+                                <td class="font-bold text-orange-500">嚴重</td>
+                                <td>服務中斷</td>
+                                <td>無法透過 SSH 連線到這台伺服器。</td>
+                            </tr>
+                            <tr>
+                                <td class="font-bold text-red-500">災難</td>
+                                <td>系統不穩定或停擺</td>
+                                <td>系統可能直接卡死，因為 systemd 是所有進程的「父親」。</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pt-8 border-t border-slate-700 mb-12">
+                    <h4 class="text-2xl font-bold mb-6 text-red-400">如何徹底刪除服務 (Uninstall Service)</h4>
+                    <div class="space-y-6">
+                        <div>
+                            <h5 class="text-md font-bold mb-2 text-slate-200">第一步：停止並禁用服務</h5>
+                            <div class="code-block text-sm">
+sudo systemctl stop py-web<br>
+sudo systemctl disable py-web
+                            </div>
+                        </div>
+                        <div>
+                            <h5 class="text-md font-bold mb-2 text-slate-200">第二步：刪除服務定義檔</h5>
+                            <div class="code-block text-sm">sudo rm /etc/systemd/system/py-web.service</div>
+                        </div>
+                        <div>
+                            <h5 class="text-md font-bold mb-2 text-slate-200 text-orange-400">第三步：重載系統管理員 (最重要！)</h5>
+                            <div class="code-block text-sm font-bold">sudo systemctl daemon-reload</div>
+                        </div>
+                        <div>
+                            <h5 class="text-md font-bold mb-2 text-slate-200">第四步：清理殘留 (選用)</h5>
+                            <div class="code-block text-sm">sudo systemctl reset-failed</div>
+                        </div>
+                    </div>
+                </div>
+
+                <h4 class="text-xl font-bold mb-4 text-orange-400">如何修復掛掉的 Daemon？</h4>
+                <div class="space-y-6 text-slate-300">
+                    <div>
+                        <p class="font-bold text-white mb-2">第一步：確認狀態 (Status)</p>
+                        <div class="code-block text-sm">sudo systemctl status py-web</div>
+                    </div>
+                    <div>
+                        <p class="font-bold text-white mb-2">第二步：重設失敗狀態 (Reset Failed)</p>
+                        <p class="text-sm text-slate-400 mb-2">先清除該服務之前殘留的「失敗」標記，這能確保重啟時狀態是乾淨的。</p>
+                        <div class="code-block text-sm">sudo systemctl reset-failed</div>
+                    </div>
+                    <div>
+                        <p class="font-bold text-white mb-2">第三步：重啟服務 (Restart)</p>
+                        <div class="code-block text-sm">sudo systemctl restart py-web</div>
+                    </div>
+                    <div>
+                        <p class="font-bold text-white mb-2">第四步：檢查錯誤日誌 (Journal)</p>
+                        <div class="code-block text-sm">sudo journalctl -u py-web -xe</div>
+                    </div>
+                </div>
+
+                <div class="mt-10 p-6 bg-orange-600/10 border border-orange-500/30 rounded-xl">
+                    <h4 class="text-lg font-bold mb-3 text-orange-400">進階：讓系統自動幫你修復</h4>
+                    <div class="code-block text-sm">
+[Service]<br>
+Restart=always<br>
+RestartSec=5s
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 6. Daemon 的製造原理 -->
+        <section id="how-its-made" class="scroll-mt-24">
+            <h3 class="text-3xl font-bold mb-6 border-l-4 border-orange-600 pl-4">6. Daemon 的製造原理：先「細胞分裂」再「靈魂奪舍」</h3>
+            <div class="space-y-12">
+                <p class="text-slate-300">
+                    在 Linux 的世界裡，除了第一個進程（PID 1 的 systemd）是 Kernel 伸手拉起來的，其他的進程都必須透過「父傳子」的方式產生。
+                </p>
+
+                <div class="grid md:grid-cols-2 gap-8">
+                    <div class="glass-card p-6 rounded-2xl">
+                        <h4 class="text-xl font-bold mb-4 text-orange-400">第一步：fork (影分身 / 細胞分裂)</h4>
+                        <ul class="text-sm space-y-2 text-slate-400">
+                            <li><span class="text-white font-bold">1. 發起請求：</span>父進程 (systemd) 向 Kernel 發起系統呼叫。</li>
+                            <li><span class="text-white font-bold">2. 核心運作：</span>Kernel 複製一份跟父進程一模一樣的副本，包括資源與記憶體空間。</li>
+                            <li><span class="text-white font-bold">結果：</span>出現一個擁有全新 PID (如 4567) 的子進程副本。</li>
+                        </ul>
+                    </div>
+                    <div class="glass-card p-6 rounded-2xl">
+                        <h4 class="text-xl font-bold mb-4 text-orange-400">第二步：exec (奪舍 / 轉生)</h4>
+                        <ul class="text-sm space-y-2 text-slate-400">
+                            <li><span class="text-white font-bold">3. 環境整備：</span>子進程處理 chdir (切換目錄)、setuid (權限降級) 等設定。</li>
+                            <li><span class="text-white font-bold">4. 核心運作：</span>執行 <code class="text-orange-300">execve()</code>，清空記憶體，載入新程式。</li>
+                            <li><span class="text-white font-bold">結果：</span>一個嶄新的 Daemon 靈魂在原有的 PID 容器中降生。</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- 製造原理架構圖 -->
+                <div class="glass-card p-4 md:p-8 rounded-3xl overflow-hidden bg-slate-900 border border-orange-500/20">
+                    <h4 class="text-center text-xl font-bold mb-10 text-orange-400">Daemon 製造工序圖解</h4>
+                    
+                    <div class="w-full max-w-2xl mx-auto">
+                        <svg viewBox="0 0 600 550" class="w-full h-auto" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+                                    <path d="M0,0 L10,5 L0,10 Z" fill="#94a3b8" />
+                                </marker>
+                                <marker id="arrow-orange" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+                                    <path d="M0,0 L10,5 L0,10 Z" fill="#fb923c" />
+                                </marker>
+                            </defs>
+
+                            <!-- Linux Kernel 方框 -->
+                            <rect x="50" y="20" width="500" height="80" rx="10" fill="#1e293b" stroke="#475569" stroke-width="2" />
+                            <text x="300" y="55" font-family="sans-serif" font-size="18" font-weight="bold" fill="#f1f5f9" text-anchor="middle">Linux Kernel (核心層)</text>
+                            <text x="300" y="80" font-family="sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">(提供系統呼叫: clone, execve, wait4, exit)</text>
+
+                            <!-- 1. 發起請求 線條 -->
+                            <path d="M 150 180 L 150 110" fill="none" stroke="#fb923c" stroke-width="2" marker-end="url(#arrow-orange)" class="flow-line" />
+                            <text x="140" y="145" font-family="sans-serif" font-size="12" font-weight="bold" fill="#fb923c" text-anchor="end">1. 發起請求 (clone/fork)</text>
+
+                            <!-- 2. 複製資源 線條 -->
+                            <path d="M 450 100 L 450 170" fill="none" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)" class="flow-line" />
+                            <text x="460" y="145" font-family="sans-serif" font-size="12" font-weight="bold" fill="#38bdf8">2. 複製資源與空間</text>
+
+                            <!-- systemd 方框 -->
+                            <rect x="50" y="180" width="200" height="100" rx="10" fill="rgba(233,84,32,0.15)" stroke="#fb923c" stroke-width="2" />
+                            <text x="150" y="215" font-family="sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">Parent: systemd</text>
+                            <text x="150" y="235" font-family="sans-serif" font-size="12" fill="#fb923c" text-anchor="middle">(PID 1)</text>
+                            <text x="150" y="260" font-family="sans-serif" font-size="11" fill="#cbd5e1" text-anchor="middle">[管理員靈魂]</text>
+
+                            <!-- Fork 水平連線 -->
+                            <path d="M 250 230 L 340 230" fill="none" stroke="#fb923c" stroke-width="2" stroke-dasharray="4" marker-end="url(#arrow-orange)" />
+                            <text x="300" y="220" font-family="sans-serif" font-size="12" font-weight="bold" fill="#fb923c" text-anchor="middle">fork</text>
+
+                            <!-- Child (分身中) 方框 -->
+                            <rect x="350" y="180" width="200" height="100" rx="10" fill="#0f172a" stroke="#fb923c" stroke-width="2" stroke-dasharray="6" />
+                            <text x="450" y="215" font-family="sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">Child: (分身中)</text>
+                            <text x="450" y="235" font-family="sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">(新 PID: 4567)</text>
+                            <text x="450" y="260" font-family="sans-serif" font-size="11" fill="#cbd5e1" text-anchor="middle">[暫時的副本]</text>
+
+                            <!-- 3. 環境整備 線條 -->
+                            <path d="M 450 280 L 450 320" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+                            <text x="460" y="305" font-family="sans-serif" font-size="12" fill="#94a3b8">3. 環境整備 (Chdir, Setuid)</text>
+
+                            <!-- Child (轉生中) 方框 -->
+                            <rect x="350" y="330" width="200" height="80" rx="10" fill="#1e1b4b" stroke="#818cf8" stroke-width="2" />
+                            <text x="450" y="360" font-family="sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">Child: (轉生中)</text>
+                            <text x="450" y="385" font-family="sans-serif" font-size="12" fill="#818cf8" text-anchor="middle">執行 execve() [清空記憶]</text>
+
+                            <!-- 4. 載入新程式 線條 -->
+                            <path d="M 450 410 L 450 450" fill="none" stroke="#818cf8" stroke-width="2" marker-end="url(#arrow)" />
+                            <text x="460" y="435" font-family="sans-serif" font-size="12" fill="#818cf8">4. 載入新程式 (Python)</text>
+
+                            <!-- Final Daemon 方框 -->
+                            <rect x="350" y="460" width="200" height="80" rx="10" fill="#312e81" stroke="#a5b4fc" stroke-width="2" />
+                            <text x="450" y="490" font-family="sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">Daemon: myserver.py</text>
+                            <text x="450" y="510" font-family="sans-serif" font-size="12" fill="#a5b4fc" text-anchor="middle">(PID 4567) [網頁主任靈魂]</text>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7. Alpine Linux vs Ubuntu -->
+        <section id="alpine" class="scroll-mt-24 border-t border-slate-700 pt-16 pb-12">
+            <h3 class="text-3xl font-bold mb-6 border-l-4 border-teal-500 pl-4">7. Alpine Linux 的 Daemon</h3>
+            <div class="alpine-card p-8 rounded-3xl space-y-12 text-sm">
+                <p class="text-slate-300 leading-relaxed">
+                    在理解了 Ubuntu 的 Daemon 管理與製造原理後，我們來看看專為極致精簡設計的 <span class="highlight text-teal-400">Alpine Linux</span>。
+                </p>
+
+                <div class="bg-teal-900/20 border border-teal-500/40 p-6 rounded-2xl text-sm">
+                    <h4 class="font-bold text-teal-300 mb-2">❓ 為什麼架構圖裡沒有 systemd？</h4>
+                    <p class="text-slate-400 leading-relaxed">
+                        <span class="text-white font-bold">Alpine Linux 不使用 systemd</span>。它選擇使用傳統且輕量的 <span class="text-teal-400 font-bold">OpenRC</span> 作為管理器，以維持 5MB 的極小體積。
+                    </p>
+                </div>
+
+                <!-- 圖形化架構展示 (OpenRC) -->
+                <div class="glass-card p-4 md:p-8 rounded-3xl mb-10 overflow-hidden bg-teal-950/20 border border-teal-500/20">
+                    <h4 class="text-center text-xl font-bold mb-8 text-teal-400 underline decoration-teal-900">Alpine OpenRC 架構圖 (非 systemd)</h4>
+                    <div class="w-full max-w-2xl mx-auto">
+                        <svg viewBox="0 0 600 480" class="w-full h-auto" xmlns="http://www.w3.org/2000/svg">
+                            <!-- Linux Kernel -->
+                            <rect x="225" y="10" width="150" height="50" rx="8" fill="#1e293b" stroke="#475569" stroke-width="2" />
+                            <text x="300" y="40" font-family="sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">Linux Kernel</text>
+
+                            <!-- Line to init -->
+                            <path d="M 300 60 L 300 100" fill="none" stroke="#2dd4bf" stroke-width="2" />
+
+                            <!-- init (PID 1) -->
+                            <rect x="200" y="100" width="200" height="60" rx="10" fill="#134e4a" stroke="#2dd4bf" stroke-width="2" />
+                            <text x="300" y="135" font-family="sans-serif" font-size="18" font-weight="bold" fill="#ffffff" text-anchor="middle">init (PID 1)</text>
+                            <text x="300" y="152" font-family="sans-serif" font-size="9" fill="#2dd4bf" text-anchor="middle">傳統初始化 (SysV / BusyBox)</text>
+
+                            <!-- Line to OpenRC -->
+                            <path d="M 300 160 L 300 200" fill="none" stroke="#2dd4bf" stroke-width="2" />
+
+                            <!-- OpenRC -->
+                            <rect x="175" y="200" width="250" height="70" rx="12" fill="#0d9488" stroke="#5eead4" stroke-width="2" class="animate-pulse-teal" />
+                            <text x="300" y="235" font-family="sans-serif" font-size="22" font-weight="black" fill="#ffffff" text-anchor="middle">OpenRC</text>
+                            <text x="300" y="255" font-family="sans-serif" font-size="10" fill="#ccfbf1" text-anchor="middle">獨立的服務腳本管理器</text>
+
+                            <!-- Branch line to runlevels -->
+                            <path d="M 300 270 L 300 300 M 150 300 L 450 300" fill="none" stroke="#0d9488" stroke-width="2" />
+                            <path d="M 150 300 L 150 320 M 450 300 L 450 320" fill="none" stroke="#0d9488" stroke-width="2" />
+
+                            <!-- Runlevel boot -->
+                            <rect x="75" y="320" width="150" height="50" rx="8" fill="#134e4a" stroke="#0d9488" stroke-width="1" />
+                            <text x="150" y="342" font-family="sans-serif" font-size="12" font-weight="bold" fill="#5eead4" text-anchor="middle">Runlevel: boot</text>
+                            <text x="150" y="358" font-family="sans-serif" font-size="10" fill="#94a3b8" text-anchor="middle">基本系統服務</text>
+
+                            <!-- Runlevel default -->
+                            <rect x="375" y="320" width="150" height="50" rx="8" fill="#134e4a" stroke="#0d9488" stroke-width="1" />
+                            <text x="450" y="342" font-family="sans-serif" font-size="12" font-weight="bold" fill="#5eead4" text-anchor="middle">Runlevel: default</text>
+                            <text x="450" y="358" font-family="sans-serif" font-size="10" fill="#94a3b8" text-anchor="middle">使用者守護進程</text>
+
+                            <!-- Sample Script Lines -->
+                            <path d="M 450 370 L 450 400 M 350 400 L 550 400" fill="none" stroke="#0f766e" stroke-width="1" />
+                            <path d="M 350 400 L 350 420 M 550 400 L 550 420" fill="none" stroke="#0f766e" stroke-width="1" />
+
+                            <!-- Script Boxes -->
+                            <rect x="300" y="420" width="100" height="30" rx="4" fill="#0f172a" stroke="#134e4a" stroke-width="1" />
+                            <text x="350" y="440" font-family="sans-serif" font-size="10" fill="#94a3b8" font-style="italic" text-anchor="middle">/etc/init.d/sshd</text>
+
+                            <rect x="500" y="420" width="100" height="30" rx="4" fill="#0f172a" stroke="#134e4a" stroke-width="1" />
+                            <text x="550" y="440" font-family="sans-serif" font-size="10" fill="#94a3b8" font-style="italic" text-anchor="middle">/etc/init.d/ntpd</text>
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- 對比總結表 -->
+                <div class="overflow-x-auto mt-10">
+                    <h4 class="text-xl font-bold mb-4 text-center text-white">對比總結表</h4>
+                    <table class="text-sm">
+                        <thead>
+                            <tr class="bg-slate-800/50 text-teal-400">
+                                <th>特性</th>
+                                <th>Ubuntu (現代主流)</th>
+                                <th>Alpine (極致精簡)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="font-bold text-slate-300">主要管理員</td>
+                                <td>systemd</td>
+                                <td>OpenRC</td>
+                            </tr>
+                            <tr>
+                                <td class="font-bold text-slate-300">啟動指令</td>
+                                <td>systemctl start &lt;服務&gt;</td>
+                                <td>rc-service &lt;服務&gt; start</td>
+                            </tr>
+                            <tr>
+                                <td class="font-bold text-slate-300">底層 C 函式庫</td>
+                                <td>glibc</td>
+                                <td>musl libc</td>
+                            </tr>
+                            <tr>
+                                <td class="font-bold text-slate-300">系統負擔</td>
+                                <td>較重，適合開發環境</td>
+                                <td>極輕，適合 Docker 容器</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="bg-slate-950 py-12 text-center text-slate-500 text-sm border-t border-slate-800">
+        <p>© 2024 Ubuntu Daemon Beginner Guide. 使用 Ubuntu 品牌色調設計。</p>
+    </footer>
+
+</body>
+</html>
